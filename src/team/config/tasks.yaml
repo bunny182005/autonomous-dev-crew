@@ -1,0 +1,132 @@
+requirement_analysis_task:
+  description: >
+    Parse the raw user request and construct a comprehensive Product Requirements Document (PRD). 
+    
+    PROJECT IDEA: {project_idea}
+    CURRENT YEAR: {current_year}
+
+    Apply MECE (Mutually Exclusive, Collectively Exhaustive) principles to define core user personas, 
+    functional workflows, non-functional requirements (SLAs, latency limits), and strict MVP boundaries. 
+    Identify explicit edge cases, required third-party integrations, and clearly delineate out-of-scope features to prevent scope creep.
+  expected_output: >
+    A structured Markdown PRD containing: Executive Summary, MoSCoW prioritized feature matrix, 
+    Given-When-Then user stories, strict Acceptance Criteria, and defined MVP scope constraints.
+  agent: product_manager
+
+system_design_task:
+  description: >
+    Translate the PRD into a concrete, highly scalable system architecture blueprint. 
+    Define the system boundary, component interactions, and the overarching data flow. 
+    Map out the API protocol strategy (RESTful routes, HTTP methods), define the authentication/authorization 
+    lifecycle (e.g., JWT, OAuth2), and establish a definitive, scalable directory structure for the entire monorepo/polyrepo.
+  expected_output: >
+    An Architecture Design Document (Markdown) detailing: C4 context model equivalents, a complete API routing 
+    table (Method, Endpoint, Payload schema, Auth status), database entity-relationship conceptual blueprint, 
+    and a mapped repository folder structure.
+  agent: system_architect
+  context:
+    - requirement_analysis_task
+
+database_design_task:
+  description: >
+    Based on the architecture ER blueprint, design a highly optimized, normalized PostgreSQL schema (up to 3NF). 
+    Define all tables, strict primary/foreign key constraints, precise column data types (e.g., UUIDs, VARCHAR limits), 
+    and default constraints. Formulate the indexing strategy (B-Tree, GIN) targeting query performance on high-traffic read paths.
+  expected_output: >
+    Valid, executable SQL schema definitions (or programmatic Alembic .py migration files) establishing the schema, 
+    plus a Markdown data dictionary documenting table relationships, cascading delete rules, and indexing rationale.
+  agent: database_engineer
+  context:
+    - system_design_task
+
+backend_development_task:
+  description: >
+    Implement the RESTful backend API using Python and FastAPI. Scaffold the application using dependency injection, 
+    strict Pydantic v2 schemas for request/response validation, and SQLAlchemy 2.0 ORM models mapped exactly to the database design. 
+    Implement JWT authentication middleware, core business logic controllers, database connection pooling, and standardized 
+    global exception handlers returning explicit HTTP status codes (400, 401, 403, 404, 500).
+  expected_output: >
+    Production-ready Python backend source code, cleanly segregated into routers, schemas, models, and services modules. 
+    Must include strict type hinting (PEP 484) and stateless session management.
+  agent: backend_engineer
+  context:
+    - system_design_task
+    - database_design_task
+
+frontend_development_task:
+  description: >
+    Construct a responsive, accessible (WCAG compliant) React frontend consuming the backend APIs. 
+    Utilize modern React conventions (Hooks, functional components) and Tailwind CSS for atomic styling. 
+    Implement robust client-side routing, global state management for the JWT auth lifecycle, and resilient data fetching logic 
+    (handling loading skeletons, HTTP error boundaries, and optimistic UI updates).
+  expected_output: >
+    Modular React source code (.tsx/.jsx) including page views, reusable UI components, routing configuration, 
+    and API service layers (e.g., Axios/Fetch interceptors) explicitly tailored to the backend API contracts.
+  agent: frontend_engineer
+  context:
+    - backend_development_task
+
+testing_task:
+  description: >
+    Formulate and execute a deterministic, automated testing suite for the codebase. 
+    For the backend, write Pytest unit/integration tests with database fixtures (mocking/rolling back DB states) 
+    and endpoint validation. For the frontend, write component tests (Jest/React Testing Library) validating DOM assertions 
+    and state changes. Target maximum branch coverage, focusing heavily on negative test cases and boundary value analysis.
+  expected_output: >
+    Executable test scripts (test_*.py, *.test.tsx) validating happy paths, edge cases, and unauthorized access attempts, 
+    alongside a generated code coverage report summary.
+  agent: test_engineer
+  context:
+    - backend_development_task
+    - frontend_development_task
+
+debugging_task:
+  description: >
+    Monitor the execution of the testing suite and parse runtime logs/stack traces. 
+    Perform surgical root-cause analysis (RCA) on failing tests, unhandled exceptions, type mismatches, or linter errors. 
+    Apply precise code patches to resolve identified regressions without introducing technical debt, violating established 
+    design patterns, or breaking upstream dependencies.
+  expected_output: >
+    Patched source code files resolving the identified bugs, coupled with a brief RCA log detailing the fault, 
+    the applied fix, and confirmation of a green (successful) test suite re-execution.
+  agent: debugging_agent
+  context:
+    - testing_task
+
+security_audit_task:
+  description: >
+    Conduct a rigorous security assessment of the backend infrastructure, API surface, and configuration files. 
+    Audit code against OWASP Top 10 vulnerabilities (SQLi, XSS, Mass Assignment, BOLA). Verify password hashing configurations 
+    (e.g., bcrypt/argon2), JWT signing/expiration mechanisms, CORS policies, and scan for any hardcoded secrets or overly permissive dependencies.
+  expected_output: >
+    A Security Audit Report (Markdown) classifying vulnerabilities by severity (High/Medium/Low), pointing to specific 
+    lines of code, and providing exact remediation code snippets and header configurations.
+  agent: security_auditor
+  context:
+    - backend_development_task
+
+deployment_task:
+  description: >
+    Containerize the full application stack utilizing optimized, multi-stage Docker builds to minimize surface attack area and image size. 
+    Orchestrate the local services (Frontend, Backend, PostgreSQL) using Docker Compose. 
+    Construct a declarative CI/CD pipeline configuration (GitHub Actions) for automated linting, test execution, and building upon push/PR events.
+  expected_output: >
+    A highly optimized Dockerfile for each service, a root docker-compose.yml defining networks and volumes, 
+    and a .github/workflows/ci.yml defining the CI/CD pipeline stages.
+  agent: devops_engineer
+  context:
+    - backend_development_task
+    - frontend_development_task
+
+documentation_task:
+  description: >
+    Synthesize all system artifacts into exhaustive, developer-ready technical documentation. 
+    Compile an authoritative repository README detailing system prerequisites, local environment scaffolding (Docker), 
+    and execution commands. Document all required environment variables and generate strict OpenAPI (Swagger) specifications for backend endpoints.
+  expected_output: >
+    A highly scannable, formatted README.md, a definitive .env.example template file, 
+    and an openapi.yaml (or equivalent programmatic docs) mapping the exact API surface.
+  agent: documentation_agent
+  context:
+    - deployment_task
+    - security_audit_task
