@@ -1,132 +1,513 @@
 requirement_analysis_task:
   description: >
-    Parse the raw user request and construct a comprehensive Product Requirements Document (PRD). 
-    
+    Parse the raw user request and construct a comprehensive Product Requirements Document (PRD).
+
     PROJECT IDEA: {project_idea}
     CURRENT YEAR: {current_year}
 
-    Apply MECE (Mutually Exclusive, Collectively Exhaustive) principles to define core user personas, 
-    functional workflows, non-functional requirements (SLAs, latency limits), and strict MVP boundaries. 
-    Identify explicit edge cases, required third-party integrations, and clearly delineate out-of-scope features to prevent scope creep.
+    Apply MECE principles to define core user personas, functional workflows, non-functional
+    requirements (SLAs, latency limits), and strict MVP boundaries. Identify explicit edge cases,
+    required third-party integrations, and clearly delineate out-of-scope features.
+
+    Output a structured Markdown PRD. Be concise — this document feeds every downstream agent.
   expected_output: >
-    A structured Markdown PRD containing: Executive Summary, MoSCoW prioritized feature matrix, 
-    Given-When-Then user stories, strict Acceptance Criteria, and defined MVP scope constraints.
+    A structured Markdown PRD containing: Executive Summary, MoSCoW prioritized feature matrix,
+    Given-When-Then user stories for the top 5 flows, Acceptance Criteria, and defined MVP scope.
   agent: product_manager
+
+# ------------------------------------------------------------
 
 system_design_task:
   description: >
-    Translate the PRD into a concrete, highly scalable system architecture blueprint. 
-    Define the system boundary, component interactions, and the overarching data flow. 
-    Map out the API protocol strategy (RESTful routes, HTTP methods), define the authentication/authorization 
-    lifecycle (e.g., JWT, OAuth2), and establish a definitive, scalable directory structure for the entire monorepo/polyrepo.
+    Translate the PRD into a concrete system architecture blueprint.
+
+    CRITICAL: Produce these three outputs explicitly — every downstream agent depends on them:
+
+    1. FOLDER STRUCTURE: Print the exact directory tree for backend/ and frontend/ that all
+       engineers MUST follow without deviation.
+
+    2. API ROUTING TABLE: A markdown table with columns:
+       Method | Endpoint | Auth Required | Request Body | Response Body | HTTP Codes
+
+    3. DATABASE ER BLUEPRINT: Text-based entity diagram listing each table, its columns,
+       data types, and foreign key relationships.
+
+    Also define: JWT strategy (algorithm, expiry), CORS origins policy, environment variables needed.
   expected_output: >
-    An Architecture Design Document (Markdown) detailing: C4 context model equivalents, a complete API routing 
-    table (Method, Endpoint, Payload schema, Auth status), database entity-relationship conceptual blueprint, 
-    and a mapped repository folder structure.
+    An Architecture Design Document (Markdown) containing the exact folder tree, complete API
+    routing table, database ER blueprint, and environment variable list.
   agent: system_architect
   context:
     - requirement_analysis_task
 
-database_design_task:
+# ------------------------------------------------------------
+
+dependency_setup_task:
   description: >
-    Based on the architecture ER blueprint, design a highly optimized, normalized PostgreSQL schema (up to 3NF). 
-    Define all tables, strict primary/foreign key constraints, precise column data types (e.g., UUIDs, VARCHAR limits), 
-    and default constraints. Formulate the indexing strategy (B-Tree, GIN) targeting query performance on high-traffic read paths.
+    Based on the architecture document, generate ALL dependency files and install them NOW
+    before any code is written. This is the most critical task — if deps are missing, everything fails.
+
+    STEP 1 — Write backend/requirements.txt with PINNED versions:
+    ```
+    fastapi==0.115.0
+    uvicorn[standard]==0.30.6
+    sqlalchemy==2.0.35
+    alembic==1.13.3
+    pydantic==2.9.2
+    pydantic-settings==2.5.2
+    asyncpg==0.29.0
+    aiosqlite==0.20.0
+    python-jose[cryptography]==3.3.0
+    passlib[bcrypt]==1.7.4
+    python-multipart==0.0.12
+    httpx==0.27.2
+    pytest==8.3.3
+    pytest-asyncio==0.24.0
+    pytest-cov==5.0.0
+    bandit==1.7.10
+    pip-audit==2.7.3
+    ```
+    Adjust versions only if the architecture requires a specific library not listed above.
+
+    STEP 2 — Write frontend/package.json with exact deps for React 18, TypeScript, Tailwind CSS 3,
+    React Router v6, TanStack Query v5, Axios, Jest, React Testing Library.
+
+    STEP 3 — Run: pip install -r backend/requirements.txt
+    STEP 4 — Run: npm install inside frontend/
+    STEP 5 — Confirm both completed without errors. If errors occur, fix version conflicts and retry.
+
+    WORKSPACE RULE: Write files to backend/requirements.txt and frontend/package.json only.
   expected_output: >
-    Valid, executable SQL schema definitions (or programmatic Alembic .py migration files) establishing the schema, 
-    plus a Markdown data dictionary documenting table relationships, cascading delete rules, and indexing rationale.
-  agent: database_engineer
+    Confirmation that requirements.txt and package.json are written and both
+    pip install and npm install completed successfully with no dependency conflicts.
+  agent: dependency_engineer
   context:
     - system_design_task
 
-backend_development_task:
+# ------------------------------------------------------------
+
+database_design_task:
   description: >
-    Implement the RESTful backend API using Python and FastAPI. Scaffold the application using dependency injection, 
-    strict Pydantic v2 schemas for request/response validation, and SQLAlchemy 2.0 ORM models mapped exactly to the database design. 
-    Implement JWT authentication middleware, core business logic controllers, database connection pooling, and standardized 
-    global exception handlers returning explicit HTTP status codes (400, 401, 403, 404, 500).
+    Based on the architecture ER blueprint, implement the complete database layer.
+
+    STEP 1 — Write database/init_schema.sql: Raw PostgreSQL DDL with CREATE TABLE statements,
+    all constraints, and indexes. This is the source of truth for the schema.
+
+    STEP 2 — Write backend/alembic.ini and backend/alembic/env.py configured to use
+    the DATABASE_URL environment variable.
+
+    STEP 3 — Write backend/alembic/versions/0001_initial_schema.py: A complete Alembic
+    migration that creates all tables. The upgrade() function must be fully implemented —
+    not a placeholder.
+
+    STEP 4 — Write backend/app/models/__init__.py and one model file per table
+    (e.g., backend/app/models/user.py) using SQLAlchemy 2.0 declarative style with
+    mapped_column() and Mapped[] type annotations.
+
+    WORKSPACE RULE: Only write files inside database/ and backend/.
   expected_output: >
-    Production-ready Python backend source code, cleanly segregated into routers, schemas, models, and services modules. 
-    Must include strict type hinting (PEP 484) and stateless session management.
-  agent: backend_engineer
+    Executable SQL DDL in database/init_schema.sql, a working Alembic migration in
+    backend/alembic/versions/0001_initial_schema.py, and SQLAlchemy model files in
+    backend/app/models/.
+  agent: database_engineer
+  context:
+    - system_design_task
+    - dependency_setup_task
+
+# ------------------------------------------------------------
+
+auth_task:
+  description: >
+    Implement the complete authentication subsystem for the backend.
+
+    Write ALL of the following files — do not skip any:
+
+    1. backend/app/core/config.py — Pydantic BaseSettings class reading all env vars
+       (DATABASE_URL, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, etc.)
+
+    2. backend/app/core/security.py — Functions: hash_password(), verify_password(),
+       create_access_token(), decode_token() using python-jose and passlib.
+
+    3. backend/app/core/deps.py — FastAPI dependency: get_db() async session generator,
+       get_current_user() that decodes JWT and fetches user from DB, get_current_active_user().
+
+    4. backend/app/services/auth_service.py — authenticate_user(), create_user(),
+       get_user_by_email() service functions (no FastAPI imports).
+
+    5. backend/app/routers/auth.py — POST /auth/register and POST /auth/login endpoints
+       returning access tokens.
+
+    WORKSPACE RULE: Only write files inside backend/.
+  expected_output: >
+    Complete auth subsystem: config.py, security.py, deps.py, auth_service.py, and auth router.
+    All files must be importable with no circular dependencies.
+  agent: auth_engineer
   context:
     - system_design_task
     - database_design_task
 
-frontend_development_task:
+# ------------------------------------------------------------
+
+service_layer_task:
   description: >
-    Construct a responsive, accessible (WCAG compliant) React frontend consuming the backend APIs. 
-    Utilize modern React conventions (Hooks, functional components) and Tailwind CSS for atomic styling. 
-    Implement robust client-side routing, global state management for the JWT auth lifecycle, and resilient data fetching logic 
-    (handling loading skeletons, HTTP error boundaries, and optimistic UI updates).
+    Implement the complete service layer and database session management.
+
+    Write ALL of the following:
+
+    1. backend/app/core/database.py — Async SQLAlchemy engine using asyncpg, async_sessionmaker,
+       and a get_db() async generator (also update deps.py to import from here).
+
+    2. backend/app/services/{project_idea}_service.py — One service file per domain entity identified
+       in the architecture. Each service file contains all CRUD operations as async functions
+       that accept a db: AsyncSession parameter. Implement proper error handling with try/except
+       and raise HTTPException with correct status codes.
+
+    3. backend/app/core/exceptions.py — Custom exception classes and a global exception handler
+       registration function to plug into FastAPI app.
+
+    WORKSPACE RULE: Only write files inside backend/.
   expected_output: >
-    Modular React source code (.tsx/.jsx) including page views, reusable UI components, routing configuration, 
-    and API service layers (e.g., Axios/Fetch interceptors) explicitly tailored to the backend API contracts.
-  agent: frontend_engineer
+    Complete service layer with database.py, one service file per domain, and exceptions.py.
+    Service functions must use SQLAlchemy 2.0 async select() syntax, not legacy Query API.
+  agent: service_engineer
   context:
-    - backend_development_task
+    - system_design_task
+    - database_design_task
+    - auth_task
+
+# ------------------------------------------------------------
+
+api_routes_task:
+  description: >
+    Implement all FastAPI routers and the main application entry point.
+
+    Write ALL of the following:
+
+    1. backend/app/schemas/{project_idea}.py — One Pydantic v2 schema file per domain with
+       Create, Update, Read (response) schemas. Use model_config = ConfigDict(from_attributes=True).
+
+    2. backend/app/routers/{project_idea}.py — One router file per domain (excluding auth which
+       is already done). Import service functions, use Depends(get_current_user) for protected routes.
+       Use correct HTTP methods and status codes per the API routing table in the architecture doc.
+
+    3. backend/app/main.py — The complete FastAPI application:
+       - Import and include ALL routers with correct prefixes and tags
+       - CORSMiddleware with origins from settings
+       - Lifespan context manager for DB table creation on startup
+       - /health endpoint returning {"status": "ok"}
+       - Register global exception handlers from exceptions.py
+
+    4. backend/Dockerfile — Multi-stage Docker build (builder installs deps, runtime copies app).
+       Expose port 8000. CMD: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+    WORKSPACE RULE: Only write files inside backend/.
+  expected_output: >
+    All Pydantic schema files, all domain routers, complete main.py that starts without errors,
+    and backend/Dockerfile.
+  agent: api_routes_engineer
+  context:
+    - system_design_task
+    - database_design_task
+    - auth_task
+    - service_layer_task
+
+# ------------------------------------------------------------
+
+component_task:
+  description: >
+    Build the complete reusable React component library for the frontend.
+
+    Write ALL of the following files with COMPLETE TypeScript source code:
+
+    1. frontend/src/components/ui/Button.tsx — variants: primary, secondary, danger, ghost.
+       Props: children, onClick, disabled, loading, type, className.
+
+    2. frontend/src/components/ui/Input.tsx — Props: label, name, type, value, onChange,
+       error, placeholder, required.
+
+    3. frontend/src/components/ui/Card.tsx — wrapper with optional title, children, footer.
+
+    4. frontend/src/components/ui/Modal.tsx — overlay with close button, title, children.
+       Uses createPortal.
+
+    5. frontend/src/components/ui/Spinner.tsx and Skeleton.tsx — loading states.
+
+    6. frontend/src/components/ui/Alert.tsx — variants: success, error, warning, info.
+
+    7. frontend/src/components/layout/Navbar.tsx — top nav with logo, nav links, auth state.
+
+    8. frontend/src/components/layout/ProtectedRoute.tsx — redirects to /login if no token.
+
+    9. frontend/src/components/ui/index.ts — barrel export of all components.
+
+    WORKSPACE RULE: Write component files to frontend/src/components/.
+    Write config files (tailwind.config.ts, tsconfig.json, vite.config.ts, index.html)
+    to frontend/ (the root of the frontend folder, not inside src/).
+
+    Also write:
+    - frontend/tailwind.config.ts
+    - frontend/tsconfig.json
+    - frontend/vite.config.ts (use Vite, not Create React App)
+    - frontend/index.html
+  expected_output: >
+    Complete component library with 8+ typed React components, Tailwind config, and Vite setup.
+  agent: component_engineer
+  context:
+    - system_design_task
+    - dependency_setup_task
+
+# ------------------------------------------------------------
+
+page_task:
+  description: >
+    Build all page views and React Router v6 configuration.
+
+    Write ALL of the following files with COMPLETE TypeScript source code:
+
+    1. frontend/src/pages/LoginPage.tsx — Login form using Input, Button components.
+       On submit calls the login mutation. Shows error Alert on failure.
+
+    2. frontend/src/pages/RegisterPage.tsx — Registration form with validation.
+
+    3. frontend/src/pages/DashboardPage.tsx — Main authenticated page. Shows user info
+       and the primary domain data (based on the project). Uses Skeleton during loading.
+
+    4. One page per primary domain entity from the PRD (e.g., ItemsPage.tsx, ProjectsPage.tsx).
+
+    5. frontend/src/pages/NotFoundPage.tsx — 404 page.
+
+    6. frontend/src/router/index.tsx — createBrowserRouter with all routes:
+       - Public routes: /login, /register, /
+       - Protected routes: /dashboard, all domain pages (wrapped in ProtectedRoute)
+       - ErrorElement for 404
+
+    7. frontend/src/App.tsx — Root component with RouterProvider and QueryClientProvider.
+
+    WORKSPACE RULE: Only write files inside frontend/src/.
+  expected_output: >
+    All page components, the complete router config in src/router/index.tsx, and App.tsx.
+    Every page must import only from src/components/ui/index.ts barrel.
+  agent: page_engineer
+  context:
+    - system_design_task
+    - component_task
+
+# ------------------------------------------------------------
+
+integration_task:
+  description: >
+    Implement the frontend API integration layer, auth context, and state management.
+
+    Write ALL of the following files with COMPLETE TypeScript source code:
+
+    1. frontend/src/lib/axios.ts — Axios instance with:
+       - baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000"
+       - Response interceptor: on 401, clear localStorage and redirect to /login
+
+    2. frontend/src/services/authService.ts — login(email, password), register(data),
+       getMe() — all returning typed responses matching backend Pydantic schemas.
+
+    3. frontend/src/services/{project_idea}Service.ts — One service file per domain with
+       getAll(), getById(), create(), update(), delete() functions.
+
+    4. frontend/src/context/AuthContext.tsx — React Context with useReducer:
+       - State: { user, token, isAuthenticated, isLoading }
+       - Actions: LOGIN, LOGOUT, SET_USER
+       - Provider reads token from localStorage on mount and fetches /auth/me
+
+    5. frontend/src/hooks/useAuth.ts — useContext(AuthContext) wrapper with login/logout functions.
+
+    6. frontend/src/hooks/use{project_idea}.ts — TanStack Query hooks per domain:
+       useQuery for lists/single items, useMutation for create/update/delete with cache invalidation.
+
+    7. frontend/src/main.tsx — Root render with AuthProvider, QueryClientProvider, RouterProvider.
+
+    8. frontend/.env.example — VITE_API_URL=http://localhost:8000
+
+    9. frontend/Dockerfile — node:20-alpine build stage, nginx:alpine runtime.
+       Copy nginx.conf serving on port 80 with try_files for SPA routing.
+
+    10. frontend/nginx.conf — nginx config for React SPA (try_files $uri /index.html).
+
+    WORKSPACE RULE: Only write files inside frontend/.
+  expected_output: >
+    Complete integration layer: axios.ts, all service files, AuthContext, all hooks, main.tsx,
+    .env.example, Dockerfile, and nginx.conf.
+  agent: integration_engineer
+  context:
+    - system_design_task
+    - api_routes_task
+    - component_task
+    - page_task
+
+# ------------------------------------------------------------
 
 testing_task:
   description: >
-    Formulate and execute a deterministic, automated testing suite for the codebase. 
-    For the backend, write Pytest unit/integration tests with database fixtures (mocking/rolling back DB states) 
-    and endpoint validation. For the frontend, write component tests (Jest/React Testing Library) validating DOM assertions 
-    and state changes. Target maximum branch coverage, focusing heavily on negative test cases and boundary value analysis.
+    Write and execute automated tests for backend and frontend.
+
+    BACKEND TESTS — Write to tests/backend/:
+
+    1. tests/backend/conftest.py — pytest fixtures:
+       - test_engine using aiosqlite (NOT postgres, so tests run without a real DB)
+       - async_client using httpx.AsyncClient with the FastAPI app
+       - test_user fixture that creates a user and returns auth headers
+
+    2. tests/backend/test_auth.py — Test: register success, register duplicate email (409),
+       login success, login wrong password (401), accessing protected route without token (401).
+
+    3. tests/backend/test_{project_idea}.py — Test CRUD for each domain: create (201), list (200),
+       get by id (200), get non-existent (404), update (200), delete (204), unauthorized (401).
+
+    FRONTEND TESTS — Write to tests/frontend/:
+
+    4. tests/frontend/Button.test.tsx — renders, click handler, disabled state, loading state.
+
+    5. tests/frontend/LoginPage.test.tsx — renders form, shows error on failed login,
+       calls login mutation on submit.
+
+    Run backend tests: pytest tests/backend/ -v --tb=short
+    Run frontend tests: npx jest tests/frontend/ --watchAll=false
+
+    Save test output to docs/test_results.txt.
+
+    WORKSPACE RULE: Save tests to tests/backend/ and tests/frontend/. Never use generated_project/.
   expected_output: >
-    Executable test scripts (test_*.py, *.test.tsx) validating happy paths, edge cases, and unauthorized access attempts, 
-    alongside a generated code coverage report summary.
+    Complete test files for backend (conftest, auth tests, domain tests) and frontend (component tests).
+    Test run output saved to docs/test_results.txt.
   agent: test_engineer
   context:
-    - backend_development_task
-    - frontend_development_task
+    - api_routes_task
+    - integration_task
+    - database_design_task
+
+# ------------------------------------------------------------
 
 debugging_task:
   description: >
-    Monitor the execution of the testing suite and parse runtime logs/stack traces. 
-    Perform surgical root-cause analysis (RCA) on failing tests, unhandled exceptions, type mismatches, or linter errors. 
-    Apply precise code patches to resolve identified regressions without introducing technical debt, violating established 
-    design patterns, or breaking upstream dependencies.
+    Review the test results in docs/test_results.txt and fix all failing tests.
+
+    PROCESS:
+    1. Read docs/test_results.txt to identify all failures.
+    2. For each failure, use stack_trace_parser to pinpoint the exact file and line.
+    3. Use surgical_file_editor to apply the minimal fix — do not rewrite entire files.
+    4. Re-run the specific failing test with pytest or jest to confirm it passes.
+    5. Repeat until all tests pass.
+    6. Write a brief RCA log to docs/debug_report.md listing each bug and its fix.
+
+    Common issues to check first:
+    - Import paths (relative vs absolute, __init__.py missing)
+    - Pydantic v2 syntax (model_config vs class Config)
+    - SQLAlchemy 2.0 async syntax (select() not Query)
+    - JWT secret not set in test environment
+    - CORS blocking test requests
   expected_output: >
-    Patched source code files resolving the identified bugs, coupled with a brief RCA log detailing the fault, 
-    the applied fix, and confirmation of a green (successful) test suite re-execution.
+    All tests passing. docs/debug_report.md with RCA entries for each bug fixed.
   agent: debugging_agent
   context:
     - testing_task
 
+# ------------------------------------------------------------
+
 security_audit_task:
   description: >
-    Conduct a rigorous security assessment of the backend infrastructure, API surface, and configuration files. 
-    Audit code against OWASP Top 10 vulnerabilities (SQLi, XSS, Mass Assignment, BOLA). Verify password hashing configurations 
-    (e.g., bcrypt/argon2), JWT signing/expiration mechanisms, CORS policies, and scan for any hardcoded secrets or overly permissive dependencies.
+    Conduct a security audit of the backend.
+
+    STEP 1 — Run SAST: bandit -r backend/app -ll -f txt -o docs/bandit_report.txt
+    STEP 2 — Run dep audit: pip-audit -r backend/requirements.txt -o docs/pip_audit.txt
+    STEP 3 — Run secrets scan across all source files.
+    STEP 4 — Manually audit:
+      - JWT algorithm (must be HS256 or RS256, never 'none')
+      - bcrypt rounds (must be >= 12)
+      - CORS origins (must not be ["*"] in production config)
+      - SQL queries (confirm all use ORM or parameterized, no f-string SQL)
+      - Pydantic models (no model_dump() on untrusted input feeding SQL directly)
+
+    Write the full audit report to docs/security_audit.md with severity table.
   expected_output: >
-    A Security Audit Report (Markdown) classifying vulnerabilities by severity (High/Medium/Low), pointing to specific 
-    lines of code, and providing exact remediation code snippets and header configurations.
+    docs/security_audit.md with CVSS-scored findings, affected file:line references,
+    and exact remediation code snippets. Bandit and pip-audit reports saved to docs/.
   agent: security_auditor
   context:
-    - backend_development_task
+    - api_routes_task
+    - auth_task
+
+# ------------------------------------------------------------
 
 deployment_task:
   description: >
-    Containerize the full application stack utilizing optimized, multi-stage Docker builds to minimize surface attack area and image size. 
-    Orchestrate the local services (Frontend, Backend, PostgreSQL) using Docker Compose. 
-    Construct a declarative CI/CD pipeline configuration (GitHub Actions) for automated linting, test execution, and building upon push/PR events.
+    Build the complete Docker deployment stack.
+
+    Write ALL of the following to the WORKSPACE ROOT (not generated_project/):
+
+    1. docker-compose.yml — Services:
+       - postgres: image postgres:16-alpine, named volume, POSTGRES_* env vars, healthcheck
+       - backend: build ./backend, depends_on postgres with condition service_healthy,
+         env_file .env, ports 8000:8000, healthcheck GET /health
+       - frontend: build ./frontend, depends_on backend, ports 80:80
+
+    2. .env.example — All environment variables:
+       DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/dbname
+       SECRET_KEY=change-me-in-production-use-openssl-rand-hex-32
+       ALGORITHM=HS256
+       ACCESS_TOKEN_EXPIRE_MINUTES=30
+       POSTGRES_USER=appuser
+       POSTGRES_PASSWORD=apppassword
+       POSTGRES_DB=appdb
+       VITE_API_URL=http://localhost:8000
+
+    3. .github/workflows/ci.yml — GitHub Actions pipeline:
+       - Trigger: push and pull_request to main
+       - Jobs: lint (flake8 backend), backend-test (pytest with postgres service container),
+         frontend-test (npm test), build-check (docker compose build --no-cache)
+
+    4. Makefile — Convenience targets:
+       make up: docker compose up --build -d
+       make down: docker compose down -v
+       make logs: docker compose logs -f
+       make test: pytest tests/backend/ -v && npx jest tests/frontend/ --watchAll=false
+       make migrate: docker compose exec backend alembic upgrade head
+
+    WORKSPACE RULE: Write to root workspace, backend/, frontend/, .github/workflows/. Never generated_project/.
   expected_output: >
-    A highly optimized Dockerfile for each service, a root docker-compose.yml defining networks and volumes, 
-    and a .github/workflows/ci.yml defining the CI/CD pipeline stages.
+    docker-compose.yml, .env.example, .github/workflows/ci.yml, and Makefile in workspace root.
+    Docker compose build must complete without errors.
   agent: devops_engineer
   context:
-    - backend_development_task
-    - frontend_development_task
+    - api_routes_task
+    - integration_task
+    - debugging_task
+
+# ------------------------------------------------------------
 
 documentation_task:
   description: >
-    Synthesize all system artifacts into exhaustive, developer-ready technical documentation. 
-    Compile an authoritative repository README detailing system prerequisites, local environment scaffolding (Docker), 
-    and execution commands. Document all required environment variables and generate strict OpenAPI (Swagger) specifications for backend endpoints.
+    Synthesize all artifacts into production-ready documentation.
+
+    Write ALL of the following:
+
+    1. README.md (workspace root) — Include:
+       - Project name, description, tech stack badges
+       - Architecture overview (2-3 sentences per layer)
+       - Prerequisites: Docker 24+, Docker Compose v2, Make
+       - Quick Start (5 steps using Make targets)
+       - Environment variables table (name, required, default, description)
+       - API quick reference table (method, endpoint, auth, description)
+       - Development setup (without Docker) for each service
+       - Running tests section
+
+    2. docs/openapi.yaml — Full OpenAPI 3.1 spec built from the API routing table.
+       Include: info block, servers, all paths with request/response schemas,
+       securitySchemes (BearerAuth JWT), and component schemas.
+
+    3. docs/ARCHITECTURE.md — System overview with ASCII component diagram,
+       data flow description, and key design decisions.
+
+    WORKSPACE RULE: Write README.md to workspace root, other docs to docs/.
   expected_output: >
-    A highly scannable, formatted README.md, a definitive .env.example template file, 
-    and an openapi.yaml (or equivalent programmatic docs) mapping the exact API surface.
+    README.md, docs/openapi.yaml, and docs/ARCHITECTURE.md — all complete and accurate.
   agent: documentation_agent
   context:
     - deployment_task
     - security_audit_task
+    - system_design_task

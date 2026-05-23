@@ -1,55 +1,158 @@
-import chromadb
-from crewai.tools import BaseTool
-from pydantic import BaseModel, Field
 from typing import Optional
 
+import chromadb
+
+from chromadb.utils.embedding_functions import (
+    SentenceTransformerEmbeddingFunction
+)
+
+from crewai.tools import BaseTool
+
+from pydantic import BaseModel, Field
+
+from tools.workspace import PROJECT_DIR
+
+
+# =========================================================
+# LOCAL EMBEDDING MODEL
+# =========================================================
+
+embedding_function = SentenceTransformerEmbeddingFunction(
+    model_name="all-MiniLM-L6-v2"
+)
+
+
+# =========================================================
+# MEMORY SCHEMA
+# =========================================================
+
 class MemoryRetrievalSchema(BaseModel):
+
     query: str = Field(
-        ..., 
-        description="The semantic search query to find relevant past project context, meeting notes, or user requirements."
+        ...,
+        description="Semantic search query."
     )
+
     collection_name: str = Field(
         default="project_memory",
-        description="The ChromaDB collection to search in. E.g., 'user_interviews', 'past_prds', 'architecture_decisions'."
+        description="Target ChromaDB collection."
     )
+
     n_results: int = Field(
         default=3,
-        description="Number of relevant documents to retrieve. Keep low (1-3) to save tokens."
+        description="Number of memories to retrieve."
     )
+
+
+# =========================================================
+# MEMORY TOOL
+# =========================================================
 
 class ChromaMemoryRetrievalTool(BaseTool):
+
     name: str = "project_memory_retrieval"
-    description: str = (
-        "Semantic search tool to retrieve past project decisions, user feedback, meeting notes, "
-        "and previous PRDs from the local vector database."
-    )
+
+    description: str = """
+    Retrieves semantic project memory using local embeddings.
+    """
+
     args_schema: type[BaseModel] = MemoryRetrievalSchema
 
-    def _run(self, query: str, collection_name: str = "project_memory", n_results: int = 3) -> str:
+    def _run(
+        self,
+        query: str,
+        collection_name: str = "project_memory",
+        n_results: int = 3
+    ) -> str:
+
         try:
-            client = chromadb.PersistentClient(path="./chroma_db")
-            
+
+            # =============================================
+            # CHROMA STORAGE INSIDE WORKSPACE
+            # =============================================
+
+            chroma_path = PROJECT_DIR / "memory_db"
+
+            client = chromadb.PersistentClient(
+                path=str(chroma_path)
+            )
+
+            # =============================================
+            # GET COLLECTION
+            # =============================================
+
             try:
-                collection = client.get_collection(name=collection_name)
-            except ValueError:
-                return f"No memory collection found named '{collection_name}'."
+
+                collection = client.get_collection(
+                    name=collection_name,
+                    embedding_function=embedding_function
+                )
+
+            except Exception:
+
+                return (
+                    f"No memory collection found named "
+                    f"'{collection_name}'."
+                )
+
+            # =============================================
+            # QUERY MEMORY
+            # =============================================
 
             results = collection.query(
                 query_texts=[query],
                 n_results=n_results
             )
 
-            if not results.get('documents') or not results['documents'][0]:
-                return f"No relevant memories found for query: '{query}'."
+            documents = results.get("documents")
+
+            if not documents or not documents[0]:
+
+                return (
+                    f"No relevant memories found for:\n{query}"
+                )
+
+            # =============================================
+            # FORMAT OUTPUT
+            # =============================================
 
             output = []
-            for i, doc in enumerate(results['documents'][0]):
-                meta = results['metadatas'][0][i] if results.get('metadatas') else "No Metadata"
-                distance = results['distances'][0][i] if results.get('distances') else "N/A"
-                
-                output.append(f"--- Memory {i+1} (Relevance Score: {distance}) ---\nMetadata: {meta}\nContent: {doc}\n")
+
+            for i, doc in enumerate(documents[0]):
+
+                metadata = (
+                    results["metadatas"][0][i]
+                    if results.get("metadatas")
+                    else {}
+                )
+
+                distance = (
+                    results["distances"][0][i]
+                    if results.get("distances")
+                    else "N/A"
+                )
+
+                output.append(
+                    f"""
+MEMORY {i+1}
+----------------------------------------
+Relevance Score: {distance}
+
+Metadata:
+{metadata}
+
+Content:
+{doc}
+"""
+                )
 
             return "\n".join(output)
 
         except Exception as e:
-            return f"Memory retrieval failed. Error: {str(e)}"
+
+            return f"""
+Memory retrieval failed.
+
+ERROR:
+{str(e)}
+"""

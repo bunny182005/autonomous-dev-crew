@@ -3,6 +3,7 @@ import subprocess
 import json
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
+from tools.workspace import PROJECT_DIR
 
 class PytestRunnerSchema(BaseModel):
     test_target: str = Field(
@@ -22,7 +23,7 @@ class PytestRunnerTool(BaseTool):
     def _run(self, test_target: str = "tests/backend", extra_flags: str = "") -> str:
         try:
             command = f"pytest {test_target} {extra_flags}".strip()
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=45)
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=45,cwd=PROJECT_DIR)
             return f"COMMAND EXECUTED: {command}\n\nSTDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
         except subprocess.TimeoutExpired:
             return "Execution timed out. The test suite took longer than 45 seconds to finish."
@@ -48,7 +49,7 @@ class JestRunnerTool(BaseTool):
             else:
                 command = f"npx jest {test_target} --watchAll=false"
             
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60,cwd=PROJECT_DIR)
             return f"COMMAND EXECUTED: {command}\n\nSTDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
         except subprocess.TimeoutExpired:
             return "Execution timed out. The Jest test suite took longer than 60 seconds to finish."
@@ -71,12 +72,12 @@ class CoverageAnalysisTool(BaseTool):
             if environment.lower() == "backend":
                 # Ensure code has been run with coverage tracking, or invoke via pytest-cov
                 command = "pytest --cov=. --cov-report=term-missing"
-                result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=45)
+                result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=45,cwd=PROJECT_DIR)
                 return f"BACKEND COVERAGE RESULTS:\n\n{result.stdout}"
                 
             elif environment.lower() == "frontend":
                 command = "npx jest --coverage --watchAll=false"
-                result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60)
+                result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60,cwd=PROJECT_DIR)
                 return f"FRONTEND COVERAGE RESULTS:\n\n{result.stdout}"
             else:
                 return "Error: Invalid environment specified. Must be 'backend' or 'frontend'."

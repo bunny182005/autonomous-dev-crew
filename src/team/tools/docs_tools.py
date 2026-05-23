@@ -2,6 +2,7 @@ import os
 import yaml
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
+from tools.workspace import PROJECT_DIR
 
 class MarkdownGeneratorSchema(BaseModel):
     filepath: str = Field(..., description="The target path to save the documentation (e.g., 'README.md', 'docs/setup_guide.md').")
@@ -14,7 +15,10 @@ class MarkdownGeneratorTool(BaseTool):
 
     def _run(self, filepath: str, content: str) -> str:
         try:
-            full_path = os.path.abspath(filepath)
+            full_path = (PROJECT_DIR / filepath).resolve()
+
+            if not str(full_path).startswith(str(PROJECT_DIR.resolve())):
+                return "Blocked: Outside workspace."
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             
             with open(full_path, "w", encoding="utf-8") as f:
@@ -39,7 +43,10 @@ class OpenApiDocTool(BaseTool):
             yaml.safe_load(spec_content)
             
             # 2. Save the validated payload
-            full_path = os.path.abspath(filepath)
+            full_path = (PROJECT_DIR / filepath).resolve()
+
+            if not str(full_path).startswith(str(PROJECT_DIR.resolve())):
+                return "Blocked: Outside workspace."
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             
             with open(full_path, "w", encoding="utf-8") as f:

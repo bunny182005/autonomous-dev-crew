@@ -3,24 +3,37 @@ import sys
 import warnings
 
 from datetime import datetime
-
 from team.crew import Team
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
-# This main file is intended to be a way for you to run your
-# crew locally, so refrain from adding unnecessary logic into this file.
-# Replace with inputs you want to test with, it will automatically
-# interpolate any tasks and agents information
 
 def run():
     """
     Run the crew.
+
+    Usage:
+        # Option A — edit PROJECT_IDEA below and run: crewai run
+        # Option B — pass idea as argument: python -m team.main "your project idea"
     """
+
+    # ── Edit this to describe your project ────────────────
+    PROJECT_IDEA = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else "A task management web app where users can create projects, assign tasks, set deadlines, and track progress with a Kanban board."
+    )
+    # ──────────────────────────────────────────────────────
+
     inputs = {
-        'topic': 'AI LLMs',
-        'current_year': str(datetime.now().year)
+        "project_idea": PROJECT_IDEA,          # ← matches {project_idea} in tasks.yaml
+        "current_year": str(datetime.now().year),
     }
+
+    print("\n" + "=" * 60)
+    print("PROJECT IDEA:")
+    print(PROJECT_IDEA)
+    print("=" * 60 + "\n")
 
     try:
         Team().crew().kickoff(inputs=inputs)
@@ -29,66 +42,37 @@ def run():
 
 
 def train():
-    """
-    Train the crew for a given number of iterations.
-    """
     inputs = {
-        "topic": "AI LLMs",
-        'current_year': str(datetime.now().year)
+        "project_idea": "A task management web app",
+        "current_year": str(datetime.now().year),
     }
     try:
-        Team().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
-
+        Team().crew().train(
+            n_iterations=int(sys.argv[1]),
+            filename=sys.argv[2],
+            inputs=inputs,
+        )
     except Exception as e:
         raise Exception(f"An error occurred while training the crew: {e}")
 
+
 def replay():
-    """
-    Replay the crew execution from a specific task.
-    """
     try:
         Team().crew().replay(task_id=sys.argv[1])
-
     except Exception as e:
         raise Exception(f"An error occurred while replaying the crew: {e}")
 
+
 def test():
-    """
-    Test the crew execution and returns the results.
-    """
     inputs = {
-        "topic": "AI LLMs",
-        "current_year": str(datetime.now().year)
+        "project_idea": "A task management web app",
+        "current_year": str(datetime.now().year),
     }
-
     try:
-        Team().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
-
+        Team().crew().test(
+            n_iterations=int(sys.argv[1]),
+            eval_llm=sys.argv[2],
+            inputs=inputs,
+        )
     except Exception as e:
         raise Exception(f"An error occurred while testing the crew: {e}")
-
-def run_with_trigger():
-    """
-    Run the crew with trigger payload.
-    """
-    import json
-
-    if len(sys.argv) < 2:
-        raise Exception("No trigger payload provided. Please provide JSON payload as argument.")
-
-    try:
-        trigger_payload = json.loads(sys.argv[1])
-    except json.JSONDecodeError:
-        raise Exception("Invalid JSON payload provided as argument")
-
-    inputs = {
-        "crewai_trigger_payload": trigger_payload,
-        "topic": "",
-        "current_year": ""
-    }
-
-    try:
-        result = Team().crew().kickoff(inputs=inputs)
-        return result
-    except Exception as e:
-        raise Exception(f"An error occurred while running the crew with trigger: {e}")

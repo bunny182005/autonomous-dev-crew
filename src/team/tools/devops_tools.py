@@ -1,107 +1,155 @@
+"""
+tools/devops_tools.py — FIXED
+
+Key fix: DockerManagerTool timeout raised from 60s → 600s (10 min).
+A multi-stage Python + React Docker build reliably exceeds 60 seconds.
+"""
+
 import os
 import subprocess
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
+from tools.workspace import PROJECT_DIR
+
 
 class DockerCommandSchema(BaseModel):
-    command: str = Field(..., description="The exact docker or docker-compose execution string (e.g., 'docker build -t app:latest .', 'docker compose up -d').")
+    command: str = Field(
+        ...,
+        description=(
+            "The exact docker or docker-compose command to run "
+            "(e.g., 'docker compose up --build -d', "
+            "'docker compose build --no-cache backend', "
+            "'docker compose logs -f'). Must start with 'docker'."
+        ),
+    )
+
 
 class DockerManagerTool(BaseTool):
     name: str = "docker_orchestrator"
-    description: str = "Manages application containerization, local image building, multi-stage orchestration, and verification testing."
+    description: str = (
+        "Manages application containerization, image builds, and service orchestration. "
+        "Use for: docker compose build, up, down, logs, ps, exec."
+    )
     args_schema: type[BaseModel] = DockerCommandSchema
 
     def _run(self, command: str) -> str:
-        # Strict enforcement block to prevent unintended escape queries
         if not command.strip().startswith(("docker", "docker-compose")):
-            return "Error: Protection boundary tripped. This tool only accepts valid 'docker' or 'docker-compose' commands."
+            return "Error: Only 'docker' or 'docker-compose' commands are accepted."
         try:
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60)
-            output = f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
-            return output if output.strip() else "Container command executed successfully with no trailing terminal output."
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=600,  # ← FIXED: was 60s. Docker builds need up to 10 min.
+                cwd=PROJECT_DIR,
+            )
+            output = f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}\nRETURN CODE: {result.returncode}"
+            return output if output.strip() else "Command executed with no output."
         except subprocess.TimeoutExpired:
-            return "Execution Error: Container operation timed out after 60 seconds."
+            return (
+                "Timeout: Docker operation exceeded 10 minutes. "
+                "Try 'docker compose build --no-cache' for a clean build, "
+                "or check that base images are accessible."
+            )
         except Exception as e:
-            return f"System Failure executing container commands. Details: {str(e)}"
+            return f"DockerManagerTool failed: {str(e)}"
+
 
 class GABlueprintSchema(BaseModel):
-    filepath: str = Field(..., description="Relative file path to the target CI/CD workflow file (e.g., '.github/workflows/ci.yml').")
+    filepath: str = Field(
+        ...,
+        description="Relative path to the GitHub Actions YAML file (e.g., '.github/workflows/ci.yml').",
+    )
+
 
 class GitHubActionsValidatorTool(BaseTool):
     name: str = "github_actions_validator"
-    description: str = "Inspects and validates local GitHub Actions YAML files for structural correctness and structural pipeline configurations."
+    description: str = (
+        "Validates a GitHub Actions YAML workflow file for structural correctness "
+        "(has 'on' trigger and 'jobs' block)."
+    )
     args_schema: type[BaseModel] = GABlueprintSchema
 
     def _run(self, filepath: str) -> str:
         try:
-            import yaml  # Leverages PyYAML (guaranteed core dependency in CrewAI ecosystems)
-            full_path = os.path.abspath(filepath)
-            if not os.path.exists(full_path):
-                return f"Validation Failed: Configuration file not found at location: {filepath}"
-                
+            import yaml
+
+            full_path = (PROJECT_DIR / filepath).resolve()
+            if not str(full_path).startswith(str(PROJECT_DIR.resolve())):
+                return "Blocked: Path outside workspace."
+            if not full_path.exists():
+                return f"Validation Failed: File not found at {filepath}"
+
             with open(full_path, "r", encoding="utf-8") as f:
                 config_data = yaml.safe_load(f)
-                
-            # Basic schema rule execution for quick validation mapping
+
             if not config_data or not isinstance(config_data, dict):
-                return "Validation Failed: Document is empty or not formatted as a standard dictionary payload."
+                return "Validation Failed: Empty or non-dict YAML."
             if "on" not in config_data or "jobs" not in config_data:
-                return "Validation Failed: Invalid GitHub Actions structure. Missing foundational root structural blocks ('on' trigger matrix or 'jobs' execution matrix)."
-                
-            return f"Validation Success: YAML layout schema for workflow target [{filepath}] structural blocks are correct."
-        except yaml.YAMLError as exc:
-            return f"Validation Failed: Invalid YAML syntax block configuration parsed.\nDetails: {str(exc)}"
+                return (
+                    "Validation Failed: Missing 'on' trigger or 'jobs' block. "
+                    "Both are required for a valid GitHub Actions workflow."
+                )
+
+            job_names = list(config_data["jobs"].keys())
+            return (
+                f"Validation Passed: {filepath}\n"
+                f"Jobs defined: {', '.join(job_names)}"
+            )
         except Exception as e:
-            return f"Validation Error running structural asset assessment. Details: {str(e)}"
+            return f"Validation error: {str(e)}"
+
 
 class K8sManifestSchema(BaseModel):
-    manifest_path: str = Field(..., description="Target path pointing to the local Kubernetes deployment manifest file (e.g., 'k8s/deployment.yml').")
+    manifest_path: str = Field(
+        ...,
+        description="Path to the Kubernetes manifest file (e.g., 'k8s/deployment.yaml').",
+    )
+
 
 class KubernetesManifestTool(BaseTool):
     name: str = "kubernetes_manifest_analyzer"
-    description: str = "Analyzes, verifies structural design conventions, and runs dry-run evaluations on Kubernetes resource files."
+    description: str = (
+        "Analyzes Kubernetes manifest files for structural correctness and "
+        "missing health/readiness probes."
+    )
     args_schema: type[BaseModel] = K8sManifestSchema
 
     def _run(self, manifest_path: str) -> str:
         try:
             import yaml
-            full_path = os.path.abspath(manifest_path)
-            if not os.path.exists(full_path):
-                return f"Analysis Failed: Kubernetes asset target missing at path: {manifest_path}"
-                
+
+            full_path = (PROJECT_DIR / manifest_path).resolve()
+            if not str(full_path).startswith(str(PROJECT_DIR.resolve())):
+                return "Blocked: Path outside workspace."
+            if not full_path.exists():
+                return f"File not found: {manifest_path}"
+
             with open(full_path, "r", encoding="utf-8") as f:
                 manifests = list(yaml.safe_load_all(f))
-                
+
             summary = []
             for idx, doc in enumerate(manifests):
-                if not doc: continue
-                kind = doc.get("kind", "Unknown Kind")
-                api_version = doc.get("apiVersion", "Unknown Version")
-                metadata = doc.get("metadata", {})
-                name = metadata.get("name", "Unnamed Resource")
-                
-                # Check for standard liveness/readiness probes on deployments
-                probe_status = "Checked"
+                if not doc:
+                    continue
+                kind = doc.get("kind", "Unknown")
+                name = doc.get("metadata", {}).get("name", "unnamed")
+                probe_status = "OK"
+
                 if kind.lower() == "deployment":
-                    containers = doc.get("spec", {}).get("template", {}).get("spec", {}).get("containers", [])
+                    containers = (
+                        doc.get("spec", {})
+                        .get("template", {})
+                        .get("spec", {})
+                        .get("containers", [])
+                    )
                     for c in containers:
                         if not c.get("livenessProbe") or not c.get("readinessProbe"):
-                            probe_status = "WARNING: Missing production health/readiness probe arrays on container block."
-                
-                summary.append(f"Document [{idx+1}] -> Kind: {kind} | Name: {name} | API: {api_version} | Probes: {probe_status}")
-            
-            # Subprocess validation check fallback option if user environment runs local kubectl engines
-            try:
-                cli_check = subprocess.run(f"kubectl apply --dry-run=client -f {manifest_path}", shell=True, capture_output=True, text=True, timeout=10)
-                if cli_check.returncode == 0:
-                    summary.append("\nLocal Engine Check: kubectl client validation confirms structural integrity.")
-                elif "not found" not in cli_check.stderr.lower():
-                    summary.append(f"\nLocal Engine Warning: kubectl flags compilation failure.\n{cli_check.stderr}")
-            except Exception:
-                pass # Gracefully skip if local system environment lacks a global kubectl binary
-                
-            return "MANIFEST PERFORMANCE READOUT:\n" + "\n".join(summary)
-        except yaml.YAMLError as exc:
-            return f"Analysis Failed: Broken multi-document YAML syntax mapped inside manifest path.\nDetails: {str(exc)}"
+                            probe_status = "WARNING: Missing liveness/readiness probes"
+
+                summary.append(f"[{idx+1}] {kind}/{name} — probes: {probe_status}")
+
+            return "MANIFEST ANALYSIS:\n" + "\n".join(summary)
         except Exception as e:
-            return f"Analysis aborted unexpectedly. Details: {str(e)}"
+            return f"KubernetesManifestTool failed: {str(e)}"
